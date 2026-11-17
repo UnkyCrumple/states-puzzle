@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Piece the Nation</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* Plan: a night-shift chart room. Ink-blue desk, pale chart paper for the blank map,
+   era-coded tiles in survey-marker colors, vermilion for hints. Single theme by choice.
+   Layout: one canvas sized to the screen; blank map on the left, labeled tile shelf on the right. */
+:root {
+  --ink: #0e1c24; --desk: #14272f; --panel: #1a3340; --line: #2b4a59; --sea: #1b4150;
+  --paper: #dde6df; --paper-edge: #0a1419; --text: #e8efe9; --muted: #9db3bb; --flag: #ff6b3d; --ok: #8fd6a8;
+  --font-display: "Bricolage Grotesque", "Trebuchet MS", system-ui, sans-serif;
+  --font-body: "Atkinson Hyperlegible", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "DM Mono", ui-monospace, Menlo, Consolas, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--ink); color: var(--text); font-family: var(--font-body); font-size: 16px; line-height: 1.45; }
+body { min-height: 100%; }
+button, select { font: inherit; color: inherit; }
+:focus-visible { outline: 3px solid var(--flag); outline-offset: 2px; }
+.wrap { max-width: 2200px; margin: 0 auto; padding: 8px 12px 12px; display: grid; gap: 8px; }
+
+header.top { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 6px 16px; }
+h1 { margin: 0; font-family: var(--font-display); font-weight: 800; font-size: clamp(1.5rem, 2.6vw, 2.1rem); letter-spacing: -0.02em; line-height: 1; }
+h1 span { color: var(--flag); }
+.msg { grid-column: 1 / -1; margin: 0; padding: 6px 12px; border-left: 4px solid var(--ok); background: var(--desk); border-radius: 0 10px 10px 0; height: 3.3em; overflow: hidden; font-size: 0.95rem; line-height: 1.35;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.msg.bad { border-left-color: var(--flag); }
+.msg b { font-family: var(--font-display); font-weight: 600; }
+
+.levels { display: flex; flex-wrap: wrap; gap: 6px; }
+.lvl { display: grid; text-align: left; padding: 5px 12px 5px 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--desk); cursor: pointer; min-width: 140px; line-height: 1.15; }
+.lvl .yr { font-family: var(--font-mono); font-size: 0.72rem; color: var(--muted); letter-spacing: 0.04em; }
+.lvl .nm { font-family: var(--font-display); font-weight: 600; font-size: 0.98rem; }
+.lvl .st { font-size: 0.74rem; color: var(--muted); }
+.lvl[aria-selected="true"] { background: var(--panel); border-color: var(--flag); box-shadow: inset 0 -3px 0 var(--flag); }
+.lvl:hover { border-color: var(--muted); }
+
+.bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; padding: 6px 10px; background: var(--desk); border: 1px solid var(--line); border-radius: 12px; }
+.stat { display: grid; line-height: 1.1; min-width: 58px; }
+.stat b { font-family: var(--font-mono); font-weight: 500; font-size: 1.15rem; font-variant-numeric: tabular-nums; }
+.stat small { color: var(--muted); font-size: 0.68rem; letter-spacing: 0.06em; text-transform: uppercase; }
+.spacer { flex: 1 1 20px; }
+.btn { border: 1px solid var(--line); background: var(--panel); border-radius: 9px; padding: 6px 12px; cursor: pointer; min-height: 38px; }
+.btn:hover:not(:disabled) { border-color: var(--muted); }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.btn.primary { background: var(--flag); border-color: var(--flag); color: #1a0a04; font-weight: 700; }
+.field { display: flex; align-items: center; gap: 8px; font-size: 0.72rem; color: var(--muted); letter-spacing: 0.06em; text-transform: uppercase; }
+.field select { background: var(--panel); border: 1px solid var(--line); border-radius: 9px; padding: 6px 10px; min-height: 38px; text-transform: none; letter-spacing: 0; font-size: 0.92rem; }
+
+.mapbox { position: relative; background: var(--sea); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+#map { display: block; width: 100%; user-select: none; -webkit-user-select: none; }
+.stage-bg { fill: #0f212a; stroke: var(--line); stroke-width: 1.5; stroke-dasharray: 6 5; }
+.stitle { fill: var(--muted); font-family: var(--font-mono); letter-spacing: 0.08em; }
+.skey { fill: var(--text); font-family: var(--font-mono); }
+.slab { fill: #bcd0d6; font-family: var(--font-mono); text-anchor: middle; pointer-events: none; }
+.stile { cursor: grab; touch-action: none; }
+.stile.drag { cursor: grabbing; }
+.stile .tp { stroke: #0a1419; stroke-width: 1.3px; stroke-linejoin: round; filter: drop-shadow(0 2px 2px rgba(0,0,0,.5)); }
+.stile.sel .tp, .stile:focus-visible .tp { stroke: var(--flag); stroke-width: 3px; }
+.stile:focus { outline: none; }
+.stile.drag .tp { filter: drop-shadow(0 8px 8px rgba(0,0,0,.55)); }
+
+.slot { fill: var(--paper); stroke: var(--paper); stroke-width: 1.6; stroke-linejoin: round; }
+.outline { fill: none; stroke: var(--paper-edge); stroke-width: 5; stroke-linejoin: round; }
+.seam { fill: none; stroke: var(--paper); stroke-width: 2; stroke-linejoin: round; pointer-events: none; }
+.ctx { fill: #2a5163; stroke: #3a6579; stroke-width: 0.8; }
+.ctxlab { fill: #8db1bf; font-family: var(--font-mono); font-size: 10px; font-style: italic; text-anchor: middle; pointer-events: none; }
+.fixed { fill: #9aa7a2; stroke: #6f7d78; stroke-width: 0.8; }
+.fixlab { fill: #243238; font-family: var(--font-mono); font-size: 9px; text-anchor: middle; pointer-events: none; }
+.placed { stroke: var(--paper-edge); stroke-width: 1; stroke-linejoin: round; transform-box: fill-box; transform-origin: center; animation: pop .45s cubic-bezier(.2, 1.6, .4, 1); }
+.placed.terr { stroke-dasharray: 5 3; }
+@keyframes pop { from { transform: scale(1.18); opacity: .4; } to { transform: scale(1); opacity: 1; } }
+.plab { fill: #11222b; font-family: var(--font-display); font-weight: 600; text-anchor: middle; dominant-baseline: central; pointer-events: none; }
+.ring { fill: none; stroke: var(--flag); stroke-width: 4; animation: ring 1s ease-out infinite; transform-box: fill-box; transform-origin: center; }
+@keyframes ring { from { transform: scale(.6); opacity: 1; } to { transform: scale(1.25); opacity: 0; } }
+.mapbox.target #map { cursor: crosshair; }
+
+.note { border: 1px solid var(--line); border-left-width: 6px; border-radius: 10px; padding: 8px 10px; background: var(--panel); }
+.note h3 { margin: 0 0 2px; font-family: var(--font-display); font-weight: 600; font-size: 1rem; }
+.note p { margin: 0; font-size: 0.9rem; }
+sup.src { font-family: var(--font-mono); font-size: 0.7rem; }
+sup.src a, .cite a { color: var(--ok); }
+.empty { color: var(--muted); }
+#notesList { display: grid; gap: 8px; }
+
+.scrim { position: fixed; inset: 0; background: rgba(5, 12, 16, 0.72); display: grid; place-items: center; padding: 16px; z-index: 80; }
+.scrim[hidden] { display: none; }
+.dialog { background: var(--desk); border: 1px solid var(--line); border-radius: 16px; width: min(640px, 100%); max-height: 90vh; overflow: auto; padding: 20px; display: grid; gap: 12px; }
+.dialog h2 { margin: 0; font-family: var(--font-display); font-weight: 800; font-size: 1.7rem; letter-spacing: -0.01em; }
+.dialog h3 { margin: 0; font-family: var(--font-display); font-weight: 600; font-size: 1.05rem; }
+.dialog ul, .dialog ol { margin: 0; padding-left: 1.2rem; display: grid; gap: 6px; }
+.dialog .row { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.stars { font-size: 2rem; letter-spacing: 0.15em; color: #ffd45e; }
+.stars .off { color: var(--line); }
+.cite { font-size: 0.85rem; }
+.cite li { overflow-wrap: anywhere; }
+.big { display: flex; flex-wrap: wrap; gap: 18px; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.confetti { position: fixed; top: -12px; width: 9px; height: 14px; z-index: 90; pointer-events: none; animation: fall linear forwards; }
+@keyframes fall { to { transform: translate3d(var(--dx), 110vh, 0) rotate(720deg); } }
+@media (max-width: 760px) { header.top { grid-template-columns: 1fr; } }
+@media (prefers-reduced-motion: reduce) { .placed, .ring { animation: none; } .confetti { display: none; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <h1>Piece the <span>Nation</span></h1>
+    <div class="levels" role="tablist" aria-label="Map levels" id="levels"></div>
+    <p class="msg" id="msg" role="status"></p>
+  </header>
+
+  <section class="bar" aria-label="Game controls">
+    <div class="stat"><b id="sPlaced">0/0</b><small>placed</small></div>
+    <div class="stat"><b id="sScore">0</b><small>score</small></div>
+    <div class="stat"><b id="sMiss">0</b><small>misses</small></div>
+    <div class="stat"><b id="sTime">0:00</b><small>time</small></div>
+    <span class="spacer"></span>
+    <label class="field" for="diff" title="Guided: names shown, wide snap. Explorer: names shown. Cartographer: shapes only, tight snap.">Challenge
+      <select id="diff">
+        <option value="easy">Guided</option>
+        <option value="med" selected>Explorer</option>
+        <option value="hard">Cartographer</option>
+      </select>
+    </label>
+    <button class="btn" id="bHint" type="button" title="Show where the selected tile goes (costs points)">Hint</button>
+    <button class="btn" id="bReveal" type="button" title="Place the selected tile for you (no points)">Place it</button>
+    <button class="btn" id="bNotes" type="button">Notes (0)</button>
+    <button class="btn" id="bReset" type="button">Restart</button>
+    <button class="btn" id="bHelp" type="button">Help</button>
+    <button class="btn" id="bSrc" type="button">Sources</button>
+  </section>
+
+  <div class="mapbox" id="mapbox">
+    <svg id="map" viewBox="0 0 1500 750" role="group" aria-label="Blank map on the left. Labeled tiles on the right. Drag tiles onto the map."></svg>
+  </div>
+</div>
+
+<div class="scrim" id="dlgDone" hidden role="dialog" aria-modal="true" aria-labelledby="doneTitle">
+  <div class="dialog" id="doneBody"></div>
+</div>
+<div class="scrim" id="dlgNotes" hidden role="dialog" aria-modal="true" aria-labelledby="notesTitle">
+  <div class="dialog">
+    <h2 id="notesTitle">Field notes</h2>
+    <div id="notesList"><p class="empty">Place a tile to add a field note with its history.</p></div>
+    <div class="row"><button class="btn primary" type="button" data-close="dlgNotes">Close</button></div>
+  </div>
+</div>
+<div class="scrim" id="dlgHelp" hidden role="dialog" aria-modal="true" aria-labelledby="helpTitle">
+  <div class="dialog">
+    <h2 id="helpTitle">How to play</h2>
+    <ol>
+      <li>The labeled tiles wait on the shelf beside the map. Pick one up and it grows to full map size.</li>
+      <li>Drop it where it belongs. A correct drop snaps into place and adds a field note. A wrong drop sends it back to the shelf.</li>
+      <li>On a touch screen or keyboard, tap or press Enter on a tile to select it, then tap the map. Hint and Place it for me work on the selected tile.</li>
+      <li>Score: 100 per tile, minus 10 per miss and 20 per hint. Stars reward tiles placed on the first try.</li>
+      <li>Colors show when each state joined the Union. Grey pieces and the faint land around the edges are context, not tiles.</li>
+    </ol>
+    <div class="row"><button class="btn primary" type="button" data-close="dlgHelp">Got it</button></div>
+  </div>
+</div>
+<div class="scrim" id="dlgSrc" hidden role="dialog" aria-modal="true" aria-labelledby="srcTitle">
+  <div class="dialog">
+    <h2 id="srcTitle">Sources and notes</h2>
+    <ol class="cite" id="srcList"></ol>
+    <h3>About the map data</h3>
+    <p class="cite">Borders come from a 2012 collection of historical US map files and were simplified for play, so edges are approximate. The repository does not state a license. Colonial charters and Native nations' lands are not drawn. For classroom use where borders must be exact, check them against the Newberry Library Atlas of Historical County Boundaries.</p>
+    <div class="row"><button class="btn primary" type="button" data-close="dlgSrc">Close</button></div>
+  </div>
+</div>
+<div class="sr" aria-live="polite" id="live"></div>
+
+<script>
+const DATA = /*DATA*/null;
+</script>
+<script>
+(() => {
+'use strict';
+const $ = (s, r = document) => r.querySelector(s);
+const NS = 'http://www.w3.org/2000/svg';
+const el = (tag, attrs = {}, parent) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (parent) parent.append(e); return e; };
+const ERA = [
+  { max: 1790, c: '#f2b84b', n: 'Original 13 (1787-90)' },
+  { max: 1803, c: '#ef7f5b', n: '1791-1803' },
+  { max: 1821, c: '#8fc7a3', n: '1812-1821' },
+  { max: 1850, c: '#6fb5d9', n: '1836-1850' },
+  { max: 1876, c: '#b79be0', n: '1858-1876' },
+  { max: 1912, c: '#e68fb3', n: '1889-1912' },
+];
+const TERR_C = '#c9c4a8';
+const eraOf = y => y == null ? null : ERA.find(e => y <= e.max);
+const TOL = { easy: [80, 0.10], med: [46, 0.06], hard: [26, 0.04] };
+const MAPW = 1000, MAPH = 750;
+const svg = $('#map');
+let S = null, live = null, drag = null;
+let LAY = { mode: 'side', W: 1500, H: 750, k: 1 };
+
+const fmt = t => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
+const say = m => { $('#live').textContent = m; };
+const srcLinks = ids => ids && ids.length ? `<sup class="src">${ids.map(i => `<a href="#" data-src="${i}" aria-label="Source ${i}">[${i}]</a>`).join('')}</sup>` : '';
+const best = id => { try { return JSON.parse(localStorage.getItem('ptn-' + id) || 'null'); } catch (e) { return null; } };
+const saveBest = (id, v) => { try { localStorage.setItem('ptn-' + id, JSON.stringify(v)); } catch (e) {} };
+const shortFact = f => (f || '').split(/(?<=\.)\s+/).slice(0, 2).join(' ');
+function setMsg(html, bad) { const m = $('#msg'); m.innerHTML = html; m.classList.toggle('bad', !!bad); }
+
+/* ---------- level tabs ---------- */
+function buildTabs() {
+  const box = $('#levels'); box.innerHTML = '';
+  DATA.levels.forEach((L, i) => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'lvl'; b.setAttribute('role', 'tab');
+    const bs = best(L.id);
+    b.innerHTML = `<span class="yr">${L.tag}</span><span class="nm">${L.title}</span><span class="st">${bs ? '★'.repeat(bs.stars) + '☆'.repeat(3 - bs.stars) : 'not played'}</span>`;
+    b.addEventListener('click', () => startLevel(i));
+    box.append(b);
+  });
+}
+function markTabs() { [...$('#levels').children].forEach((b, i) => b.setAttribute('aria-selected', String(i === S.li))); }
+
+/* ---------- level setup ---------- */
+function startLevel(li, snap) {
+  stopTimer();
+  const L = DATA.levels[li];
+  S = {
+    li, L, diff: (snap && snap.diff) || $('#diff').value,
+    placed: new Set(snap ? snap.placed : []), firstTry: new Set(snap ? snap.firstTry : []),
+    misses: snap ? snap.misses : 0, hints: snap ? snap.hints : 0, revealed: new Set(snap ? snap.revealed : []),
+    tileMiss: snap ? snap.tileMiss : {}, hinted: {}, score: snap ? snap.score : 0, elapsed: snap ? snap.elapsed : 0,
+    selected: null, started: !!(snap && snap.elapsed), done: false, notes: [],
+  };
+  $('#diff').value = S.diff;
+  S.tiles = L.pieces.map((p, i) => ({ p, i })).filter(o => o.p.role === 'tile');
+  drawMap();
+  S.tiles.forEach(o => { if (S.placed.has(o.i)) { drawPlaced(o.i, false); addNote(o.i, true); } });
+  computeLayout(); buildStage(); updateStats(); markTabs(); renderNotes();
+  setMsg(`<b>${L.tag} · ${L.title}.</b> ${L.intro}`);
+  say(`${L.title}. ${S.tiles.length} tiles to place.`);
+  if (S.started) startTimer();
+}
+
+function drawMap() {
+  svg.innerHTML = '';
+  const defs = el('defs', {}, svg), cp = el('clipPath', { id: 'mapclip' }, defs); el('rect', { x: 0, y: 0, width: MAPW, height: MAPH }, cp);
+  const root = el('g', { 'clip-path': 'url(#mapclip)' }, svg);
+  const L = S.L, gCtx = el('g', {}, root), gOut = el('g', {}, root), gSlots = el('g', {}, root), gSeam = el('g', {}, root), gFix = el('g', {}, root);
+  S.gPlaced = el('g', {}, root); S.gHint = el('g', {}, root);
+  L.pieces.forEach(p => {
+    if (p.role === 'context') {
+      el('path', { d: p.d, class: 'ctx' }, gCtx);
+      if (p.label && p.bbox[2] - p.bbox[0] > 70) { const t = el('text', { x: p.label_pt[0], y: p.label_pt[1], class: 'ctxlab' }, gCtx); t.textContent = p.label; }
+    } else {
+      el('path', { d: p.d, class: 'outline' }, gOut);
+      if (p.role === 'fixed') {
+        el('path', { d: p.d, class: 'fixed' }, gFix);
+        if (p.name !== 'D.C.' && p.bbox[2] - p.bbox[0] > 90) { const t = el('text', { x: p.label_pt[0], y: p.label_pt[1], class: 'fixlab' }, gFix); t.textContent = p.name; }
+      } else { el('path', { d: p.d, class: 'slot' }, gSlots); el('path', { d: p.d, class: 'seam' }, gSeam); }
+    }
+  });
+  S.gStage = el('g', { id: 'stage' }, svg);
+}
+
+/* ---------- canvas sizing and the tile shelf ---------- */
+function computeLayout() {
+  const box = $('#mapbox'), cw = box.clientWidth;
+  const top = box.getBoundingClientRect().top + window.scrollY;
+  const ch = Math.max(440, window.innerHeight - top - 24);
+  const asp = cw / ch;
+  if (asp >= 1.75) { LAY = { mode: 'side', W: MAPH * asp, H: MAPH }; svg.style.height = ch + 'px'; }
+  else { LAY = { mode: 'bottom', W: MAPW, H: MAPH + 600 }; svg.style.height = 'auto'; }
+  svg.setAttribute('viewBox', `0 0 ${LAY.W} ${LAY.H}`);
+  const m = svg.getScreenCTM(); LAY.k = m ? m.a : 1;
+  LAY.key = `${LAY.mode}|${Math.round(LAY.W)}|${Math.round(LAY.k * 100)}`;
+}
+const toMap = (cx, cy) => { const p = new DOMPoint(cx, cy).matrixTransform(svg.getScreenCTM().inverse()); return [p.x, p.y]; };
+const home = p => [(p.bbox[0] + p.bbox[2]) / 2, (p.bbox[1] + p.bbox[3]) / 2];
+const setT = (t, tx, ty, s) => { t.tx = tx; t.ty = ty; t.cs = s; t.g.setAttribute('transform', `translate(${tx} ${ty}) scale(${s})`); };
+
+function packStage(rect, u, labels, items) {
+  const fs = 12 * u, lh = fs * 1.6, gap = 10 * u, minDim = 26 * u;
+  const list = items.map(t => { const w = t.p.bbox[2] - t.p.bbox[0], h = t.p.bbox[3] - t.p.bbox[1]; return { t, w, h, lw: labels ? t.p.name.length * fs * 0.62 : 0 }; }).sort((a, b) => b.h - a.h);
+  const fit = F => {
+    let x = 0, y = 0, rowH = 0; const out = [];
+    for (const it of list) {
+      const Fi = Math.max(F, minDim / Math.max(it.w, it.h)), cw = Math.max(it.w * Fi, it.lw), chh = it.h * Fi + (labels ? lh : 0);
+      if (x > 0 && x + cw > rect.w) { x = 0; y += rowH + gap; rowH = 0; }
+      out.push({ it, Fi, cw, x, y }); x += cw + gap; rowH = Math.max(rowH, chh);
+    }
+    return { out, h: y + rowH };
+  };
+  for (let F = 0.9; F >= 0.16; F -= 0.02) { const r = fit(F); if (r.h <= rect.h) return r.out; }
+  return fit(0.16).out;
+}
+
+function buildStage() {
+  const g = S.gStage; g.innerHTML = ''; S.stageTiles = [];
+  const u = 1 / LAY.k, labels = S.diff !== 'hard';
+  const zone = LAY.mode === 'side' ? { x: MAPW + 8, y: 6, w: LAY.W - MAPW - 14, h: MAPH - 12 } : { x: 6, y: MAPH + 8, w: MAPW - 12, h: LAY.H - MAPH - 14 };
+  el('rect', { x: zone.x, y: zone.y, width: zone.w, height: zone.h, rx: 12 * u, class: 'stage-bg' }, g);
+  S.stageZone = zone;
+  const left = S.tiles.filter(t => !S.placed.has(t.i));
+  const title = el('text', { x: zone.x + 12 * u, y: zone.y + 20 * u, class: 'stitle', 'font-size': 12 * u }, g); title.id = 'stTitle';
+  // legend
+  const used = new Set(S.tiles.map(o => eraOf(o.p.year)).filter(Boolean)), items = ERA.filter(e => used.has(e)).map(e => [e.c, e.n]);
+  if (S.tiles.some(o => o.p.year == null)) items.push([TERR_C, 'Territory']);
+  let lx = zone.x + 12 * u, ly = zone.y + 38 * u; const fs = 11.5 * u;
+  items.forEach(([c, n]) => {
+    const w = 18 * u + n.length * fs * 0.62 + 14 * u;
+    if (lx + w > zone.x + zone.w - 8 * u && lx > zone.x + 14 * u) { lx = zone.x + 12 * u; ly += 18 * u; }
+    el('rect', { x: lx, y: ly - 9.5 * u, width: 11 * u, height: 11 * u, rx: 2 * u, fill: c }, g);
+    const t = el('text', { x: lx + 16 * u, y: ly, class: 'skey', 'font-size': fs }, g); t.textContent = n;
+    lx += w;
+  });
+  const top = ly + 20 * u;
+  const rect = { x: zone.x + 10 * u, y: top, w: zone.w - 20 * u, h: zone.y + zone.h - top - 8 * u };
+  const placement = packStage(rect, u, labels, left);
+  placement.forEach(({ it, Fi, cw, x, y }) => {
+    const t = it.t, p = t.p, [x0, y0] = p.bbox;
+    const sx = rect.x + x + (cw - it.w * Fi) / 2, sy = rect.y + y;
+    t.F = Fi; t.sx = sx; t.sy = sy;
+    const c = eraOf(p.year);
+    t.g = el('g', { class: 'stile' + (S.selected === t.i ? ' sel' : ''), tabindex: 0, role: 'button', 'data-i': t.i,
+      'aria-label': labels ? `${p.name} tile` : `Mystery tile ${S.tiles.indexOf(t) + 1}` }, g);
+    const pad = 5 / Fi;
+    el('rect', { x: x0 - pad, y: y0 - pad, width: it.w + 2 * pad, height: it.h + 2 * pad, fill: 'transparent' }, t.g);
+    el('path', { d: p.d, class: 'tp', fill: c ? c.c : TERR_C, 'vector-effect': 'non-scaling-stroke', 'stroke-dasharray': c ? '' : '5 3' }, t.g);
+    setT(t, sx - Fi * x0, sy - Fi * y0, Fi);
+    if (labels) { t.lab = el('text', { x: rect.x + x + cw / 2, y: sy + it.h * Fi + fs * 1.15, class: 'slab', 'font-size': fs }, g); t.lab.textContent = p.name; }
+    S.stageTiles.push(t);
+  });
+  stageTitle();
+}
+function stageTitle() { const t = $('#stTitle'); if (t) t.textContent = `TILES LEFT: ${S.tiles.length - S.placed.size}`; }
+const tileOf = i => S.tiles.find(t => t.i === i);
+
+/* ---------- selecting ---------- */
+function select(i) {
+  S.selected = (S.selected === i) ? null : i;
+  S.tiles.forEach(t => t.g && t.g.classList.toggle('sel', t.i === S.selected));
+  $('#mapbox').classList.toggle('target', S.selected != null);
+  if (S.selected != null) { const p = S.L.pieces[S.selected]; const m = S.diff === 'hard' ? 'Tile selected. Click the map where it belongs.' : `${p.name} selected. Click the map where it belongs.`; setMsg(m); say(m); }
+}
+
+/* ---------- drag ---------- */
+svg.addEventListener('pointerdown', e => {
+  const g = e.target.closest('.stile'); if (!g || S.done || e.button > 0 || drag) return;
+  e.preventDefault();
+  const t = tileOf(+g.dataset.i), pm = toMap(e.clientX, e.clientY);
+  drag = { t, lx: (pm[0] - t.tx) / t.cs, ly: (pm[1] - t.ty) / t.cs, sx: e.clientX, sy: e.clientY, moved: false, k: LAY.k };
+  window.addEventListener('pointermove', onMove); window.addEventListener('pointerup', onUp); window.addEventListener('pointercancel', onCancel);
+});
+svg.addEventListener('keydown', e => { const g = e.target.closest && e.target.closest('.stile'); if (g && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); select(+g.dataset.i); } });
+function onMove(e) {
+  if (!drag) return;
+  const d = drag;
+  if (!d.moved) {
+    if (Math.hypot(e.clientX - d.sx, e.clientY - d.sy) < 6) return;
+    d.moved = true; d.t.g.classList.add('drag'); svg.append(d.t.g); if (d.t.lab) d.t.lab.style.display = 'none';
+  }
+  const pm = toMap(e.clientX, e.clientY); setT(d.t, pm[0] - d.lx, pm[1] - d.ly, 1);
+}
+function endDrag() { window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', onUp); window.removeEventListener('pointercancel', onCancel); }
+function sendBack(t) {
+  const from = { x: t.tx, y: t.ty, s: t.cs }, to = { x: t.sx - t.F * t.p.bbox[0], y: t.sy - t.F * t.p.bbox[1], s: t.F }, t0 = performance.now(), dur = matchMedia('(prefers-reduced-motion: reduce)').matches ? 1 : 240;
+  const step = now => {
+    const a = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - a, 3);
+    setT(t, from.x + (to.x - from.x) * e, from.y + (to.y - from.y) * e, from.s + (to.s - from.s) * e);
+    if (a < 1) requestAnimationFrame(step); else { t.g.classList.remove('drag'); if (t.lab) t.lab.style.display = ''; }
+  };
+  requestAnimationFrame(step);
+}
+function onCancel() { if (!drag) return; endDrag(); const d = drag; drag = null; if (d.moved) sendBack(d.t); }
+function onUp() {
+  if (!drag) return;
+  const d = drag; endDrag(); drag = null;
+  if (!d.moved) { select(d.t.i); return; }
+  const [cx, cy] = home({ bbox: d.t.p.bbox }), mx = d.t.tx + cx, my = d.t.ty + cy;
+  const onMap = mx > -20 && mx < MAPW + 20 && my > -20 && my < MAPH + 20;
+  if (onMap && tryPlace(d.t.i, mx, my)) return;
+  sendBack(d.t);
+}
+svg.addEventListener('click', e => {
+  if (S.selected == null || S.done || e.target.closest('.stile')) return;
+  const [mx, my] = toMap(e.clientX, e.clientY);
+  if (mx < 0 || mx > MAPW || my < 0 || my > MAPH) return;
+  tryPlace(S.selected, mx, my);
+});
+
+function tryPlace(i, mx, my) {
+  startTimer();
+  const p = S.L.pieces[i], [hx, hy] = home(p), k = LAY.k, dist = Math.hypot(mx - hx, my - hy) * k;
+  const size = Math.max(p.bbox[2] - p.bbox[0], p.bbox[3] - p.bbox[1]) * k;
+  const [base, rel] = TOL[S.diff], tol = base + rel * size;
+  if (dist <= tol) { place(i, false); return true; }
+  S.misses++; S.tileMiss[i] = (S.tileMiss[i] || 0) + 1; updateStats();
+  const need = { easy: 1, med: 2, hard: 3 }[S.diff];
+  let msg = 'Not quite. Try again.';
+  if (S.tileMiss[i] >= need) msg += ` Hint: it belongs ${compass(hx - mx, hy - my)} of where you dropped it.`;
+  setMsg(msg, true); say(msg);
+  return false;
+}
+function compass(dx, dy) {
+  const ax = Math.abs(dx), ay = Math.abs(dy), ns = dy < 0 ? 'north' : 'south', ew = dx > 0 ? 'east' : 'west';
+  if (ax > ay * 2.4) return ew; if (ay > ax * 2.4) return ns; return `${ns}-${ew}`;
+}
+
+/* ---------- placing ---------- */
+function place(i, viaReveal) {
+  const p = S.L.pieces[i], t = tileOf(i);
+  S.placed.add(i);
+  if (viaReveal) S.revealed.add(i);
+  else {
+    const m = S.tileMiss[i] || 0, h = S.hinted[i] || 0;
+    if (!m && !h) S.firstTry.add(i);
+    S.score += Math.max(10, 100 - 10 * m - 20 * h);
+  }
+  if (t && t.g) { t.g.remove(); if (t.lab) t.lab.remove(); }
+  if (S.selected === i) { S.selected = null; $('#mapbox').classList.remove('target'); }
+  drawPlaced(i, true); addNote(i); stageTitle(); updateStats();
+  setMsg(`<b>${p.name}.</b> ${shortFact(p.fact)}`); say(`${p.name} placed. ${p.fact || ''}`);
+  if (S.placed.size === S.tiles.length) finish();
+}
+function drawPlaced(i, animate) {
+  const p = S.L.pieces[i], c = eraOf(p.year);
+  const path = el('path', { d: p.d, class: 'placed' + (c ? '' : ' terr'), fill: c ? c.c : TERR_C }, S.gPlaced);
+  if (!animate) path.style.animation = 'none';
+  const tt = el('title', {}, path); tt.textContent = p.name;
+  const w = p.bbox[2] - p.bbox[0], h = p.bbox[3] - p.bbox[1];
+  let txt = null, fs = 11;
+  if (w >= p.name.length * 6.4 + 6 && h > 16) txt = p.name;
+  else if (p.abbr && w >= 17 && h >= 14) { txt = p.abbr; fs = 9.5; }
+  else if (p.name.includes(' ') && w >= 40 && h > 36) { txt = p.name; fs = 9; }
+  if (txt) {
+    const lab = el('text', { x: p.label_pt[0], y: p.label_pt[1], class: 'plab', 'font-size': fs }, S.gPlaced);
+    if (txt.includes(' ') && txt.length * fs * 0.6 > w) { const parts = txt.split(' '), mid = Math.ceil(parts.length / 2);
+      [parts.slice(0, mid).join(' '), parts.slice(mid).join(' ')].forEach((s, n) => { const ts = el('tspan', { x: p.label_pt[0], dy: n ? fs * 1.05 : -fs * 0.5 }, lab); ts.textContent = s; }); }
+    else lab.textContent = txt;
+  }
+}
+function addNote(i, quiet) { S.notes.unshift(i); if (!quiet) renderNotes(); else renderNotes(); }
+function renderNotes() {
+  const box = $('#notesList');
+  box.innerHTML = S.notes.length ? '' : '<p class="empty">Place a tile to add a field note with its history.</p>';
+  S.notes.forEach(i => {
+    const p = S.L.pieces[i], c = eraOf(p.year), d = document.createElement('div'); d.className = 'note'; d.style.borderLeftColor = c ? c.c : TERR_C;
+    d.innerHTML = `<h3>${p.name}</h3><p>${p.fact || ''} ${srcLinks(p.src)}</p>`; box.append(d);
+  });
+  $('#bNotes').textContent = `Notes (${S.notes.length})`;
+}
+
+/* ---------- hint / reveal ---------- */
+$('#bHint').addEventListener('click', () => {
+  if (S.selected == null) { setMsg('Select a tile first (click it), then press Hint.', true); return; }
+  startTimer(); S.hinted[S.selected] = (S.hinted[S.selected] || 0) + 1; S.hints++;
+  const p = S.L.pieces[S.selected], [hx, hy] = home(p), r = Math.max(p.bbox[2] - p.bbox[0], p.bbox[3] - p.bbox[1]) / 2 + 14;
+  const ring = el('circle', { cx: hx, cy: hy, r, class: 'ring' }, S.gHint); setTimeout(() => ring.remove(), 3200);
+  updateStats(); say('Hint shown on the map.');
+});
+$('#bReveal').addEventListener('click', () => {
+  if (S.selected == null) { setMsg('Select a tile first (click it), then press Place it for me.', true); return; }
+  startTimer(); place(S.selected, true);
+});
+$('#bReset').addEventListener('click', () => startLevel(S.li));
+$('#diff').addEventListener('change', () => startLevel(S.li));
+
+/* ---------- stats, timer ---------- */
+function updateStats() {
+  $('#sPlaced').textContent = `${S.placed.size}/${S.tiles.length}`;
+  $('#sScore').textContent = S.score; $('#sMiss').textContent = S.misses; $('#sTime').textContent = fmt(S.elapsed);
+  $('#bHint').disabled = $('#bReveal').disabled = S.done;
+}
+function startTimer() { if (S.done || live) return; S.started = true; const t0 = performance.now() - S.elapsed * 1000; live = setInterval(() => { S.elapsed = (performance.now() - t0) / 1000; $('#sTime').textContent = fmt(S.elapsed); }, 250); }
+function stopTimer() { if (live) { clearInterval(live); live = null; } }
+
+/* ---------- finish ---------- */
+function finish() {
+  S.done = true; stopTimer(); updateStats();
+  const n = S.tiles.length, ft = S.firstTry.size, ratio = ft / n;
+  const stars = ratio >= 0.9 ? 3 : ratio >= 0.65 ? 2 : 1;
+  const prev = best(S.L.id);
+  if (!prev || S.score > prev.score) saveBest(S.L.id, { stars: Math.max(stars, prev ? prev.stars : 0), score: S.score, time: Math.round(S.elapsed) });
+  else if (stars > prev.stars) saveBest(S.L.id, { ...prev, stars });
+  buildTabs(); markTabs();
+  const last = S.li === DATA.levels.length - 1;
+  $('#doneBody').innerHTML = `
+    <h2 id="doneTitle">${S.L.tag} complete</h2>
+    <div class="stars" aria-label="${stars} of 3 stars">${'★'.repeat(stars)}<span class="off">${'★'.repeat(3 - stars)}</span></div>
+    <div class="big"><div class="stat"><b>${S.score}</b><small>score</small></div><div class="stat"><b>${ft}/${n}</b><small>first try</small></div>
+    <div class="stat"><b>${S.misses}</b><small>misses</small></div><div class="stat"><b>${fmt(S.elapsed)}</b><small>time</small></div></div>
+    <h3>What changed on the map</h3>
+    <ul>${S.L.notes.map(x => `<li>${x[0]} ${srcLinks(x[1])}</li>`).join('')}</ul>
+    <div class="row">
+      <button class="btn" type="button" data-act="notes">Read field notes</button>
+      <button class="btn" type="button" data-act="again">Play again</button>
+      ${last ? '' : '<button class="btn primary" type="button" data-act="next">Next level</button>'}
+    </div>`;
+  $('#dlgDone').hidden = false; $('#doneBody button:last-child').focus();
+  say(`Level complete. ${stars} stars.`);
+  if (!matchMedia('(prefers-reduced-motion: reduce)').matches) confetti();
+}
+$('#doneBody').addEventListener('click', e => {
+  const a = e.target.closest('[data-act]'); if (!a) return; const act = a.dataset.act;
+  if (act === 'next') { $('#dlgDone').hidden = true; startLevel(S.li + 1); }
+  if (act === 'again') { $('#dlgDone').hidden = true; startLevel(S.li); }
+  if (act === 'notes') { $('#dlgDone').hidden = true; openDlg('dlgNotes'); }
+});
+function confetti() {
+  const cols = ERA.map(e => e.c).concat([TERR_C, '#ff6b3d']);
+  for (let i = 0; i < 70; i++) {
+    const c = document.createElement('i'); c.className = 'confetti';
+    c.style.left = Math.random() * 100 + 'vw'; c.style.background = cols[i % cols.length];
+    c.style.setProperty('--dx', (Math.random() * 200 - 100) + 'px');
+    c.style.animationDuration = 1.6 + Math.random() * 1.6 + 's'; c.style.animationDelay = Math.random() * 0.5 + 's';
+    document.body.append(c); setTimeout(() => c.remove(), 4200);
+  }
+}
+
+/* ---------- dialogs ---------- */
+function openDlg(id) { $('#' + id).hidden = false; const b = $('#' + id + ' button'); if (b) b.focus(); }
+document.addEventListener('click', e => {
+  const c = e.target.closest('[data-close]'); if (c) { $('#' + c.dataset.close).hidden = true; }
+  const s = e.target.closest('[data-src]'); if (s) { e.preventDefault(); openDlg('dlgSrc'); const li = $('#src' + s.dataset.src); if (li) { li.scrollIntoView({ block: 'center' }); li.style.outline = '2px solid var(--flag)'; setTimeout(() => li.style.outline = '', 1800); } }
+  if (e.target.classList.contains('scrim')) e.target.hidden = true;
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape') document.querySelectorAll('.scrim').forEach(s => s.hidden = true); });
+$('#bHelp').addEventListener('click', () => openDlg('dlgHelp'));
+$('#bSrc').addEventListener('click', () => openDlg('dlgSrc'));
+$('#bNotes').addEventListener('click', () => openDlg('dlgNotes'));
+$('#srcList').innerHTML = Object.entries(DATA.sources).map(([k, v]) => `<li id="src${k}">[${k}] <a href="${v.u}" target="_blank" rel="noopener">${v.t}</a></li>`).join('');
+
+/* ---------- resize / persistence ---------- */
+let rt = 0;
+const relayout = () => { clearTimeout(rt); rt = setTimeout(() => { if (!S || drag) return; const old = LAY.key; computeLayout(); if (LAY.key !== old) buildStage(); }, 120); };
+window.addEventListener('resize', relayout);
+if (window.ResizeObserver) new ResizeObserver(relayout).observe($('#mapbox'));
+
+const snapshot = () => S && !S.done ? { li: S.li, diff: S.diff, placed: [...S.placed], firstTry: [...S.firstTry], revealed: [...S.revealed], misses: S.misses, hints: S.hints, tileMiss: S.tileMiss, score: S.score, elapsed: S.elapsed } : null;
+window.claude?.hot?.snapshot?.(snapshot);
+const boot = data => { buildTabs(); const sn = data && data.placed ? data : null; startLevel(sn ? sn.li : 0, sn); };
+window.claude?.hot?.ready ? window.claude.hot.ready(boot) : boot(window.claude?.hot?.data ?? {});
+})();
+</script>
+</body>
+</html>
